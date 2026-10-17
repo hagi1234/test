@@ -21,6 +21,31 @@
 npm start   # http://localhost:8080
 ```
 
+## Androidアプリ版
+
+[Capacitor](https://capacitorjs.com/) で同じWebアプリを Android アプリ（APK）にしています。ストアには出さず、自分のスマホに直接インストールして使う想定です。
+
+### インストール手順
+
+1. GitHub の **Actions** タブ →「Android APK」の最新の成功した実行を開く
+2. 下の **Artifacts** から `gohan-diary-apk` をダウンロードして解凍し、`gohan-diary.apk` を取り出す
+3. スマホで `gohan-diary.apk` を開いてインストール（初回は「提供元不明のアプリ」の許可を求められます）
+
+コードを push するたびに GitHub Actions が自動で APK をビルドします。新しい APK は上書きインストールでき、記録はそのまま残ります。
+
+- 記録はスマホ内に保存されます。機種変更やアンインストールに備えて、設定画面の「エクスポート」でときどきバックアップしてください（共有メニューから Google ドライブなどに保存できます）
+- 署名鍵 `android/app/gohan-diary.keystore` は個人利用のためリポジトリに含めています。ストアで公開する場合は別の鍵を作り、リポジトリには置かないでください
+
+### 手元でビルドする場合
+
+Android Studio（または Android SDK と JDK 21）が必要です。
+
+```sh
+npm install
+npm run android:sync
+cd android && ./gradlew assembleRelease   # app/build/outputs/apk/release/app-release.apk
+```
+
 ## テスト
 
 ```sh
@@ -36,5 +61,7 @@ npm test
 | `js/foods.js` | 食品データベース（約60品目、1食分あたりの概算値） |
 | `js/calc.js` | 目標値・採点・アドバイスの計算ロジック |
 | `js/app.js` | 画面の描画と操作 |
+| `android/` | Android アプリのプロジェクト（Capacitor） |
+| `.github/workflows/android.yml` | APK を自動ビルドするワークフロー |
 
 ※ 栄養価は日本食品標準成分表をもとにした目安です。医療的な指導の代わりにはなりません。

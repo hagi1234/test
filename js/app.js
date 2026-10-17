@@ -10,6 +10,10 @@
   ];
   const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
 
+  // Androidアプリ（Capacitor）として動いているときだけ値が入る
+  const native = window.Capacitor && window.Capacitor.isNativePlatform() ? window.Capacitor : null;
+  const plugins = {};
+  const plugin = (name) => (plugins[name] = plugins[name] || native.registerPlugin(name));
   const $ = (sel) => document.querySelector(sel);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const fmt = (v, d = 0) => (Math.round(v * 10 ** d) / 10 ** d).toLocaleString('ja-JP');
@@ -393,11 +397,23 @@
     showView('diary');
   });
 
-  $('#export-btn').addEventListener('click', () => {
-    const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+  $('#export-btn').addEventListener('click', async () => {
+    const json = JSON.stringify(state, null, 2);
+    const filename = `gohan-diary-${todayKey()}.json`;
+    if (native) {
+      // アプリ版はダウンロードできないので、ファイルを作って共有メニューから保存する
+      try {
+        const { uri } = await plugin('Filesystem').writeFile({ path: filename, data: json, directory: 'CACHE', encoding: 'utf8' });
+        await plugin('Share').share({ title: 'ごはん日記のバックアップ', files: [uri] });
+      } catch (e) {
+        if (!/cancel/i.test(e && e.message)) alert('エクスポートに失敗しました');
+      }
+      return;
+    }
+    const blob = new Blob([json], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `gohan-diary-${todayKey()}.json`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(a.href);
   });
@@ -439,6 +455,17 @@
     renderDiary();
     renderWeight();
     renderSettings();
+  }
+
+  // Androidの戻るボタン: ダイアログ → 食事タブ → アプリ終了 の順に戻る
+  if (native) {
+    const App = plugin('App');
+    App.addListener('backButton', () => {
+      const open = document.querySelector('dialog[open]');
+      if (open) open.close();
+      else if ($('#view-diary').hidden) showView('diary');
+      else App.exitApp();
+    });
   }
 
   renderAll();

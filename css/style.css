@@ -9,6 +9,9 @@
   --low: #e0a020;
   --over: #e05050;
   --ok: #2fa36b;
+  /* Androidアプリ版では Capacitor が --safe-area-inset-* を設定する */
+  --inset-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --inset-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -31,7 +34,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Yu Gothic", sans-serif;
   font-size: 15px;
   line-height: 1.5;
-  padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  padding-bottom: calc(72px + var(--inset-bottom));
 }
 
 button, input, select { font: inherit; color: inherit; }
@@ -39,7 +42,7 @@ button, input, select { font: inherit; color: inherit; }
 .app-header {
   background: var(--accent);
   color: #fff;
-  padding: 12px 16px;
+  padding: calc(12px + var(--inset-top)) 16px 12px;
   position: sticky;
   top: 0;
   z-index: 5;
@@ -171,7 +174,7 @@ button.danger { color: var(--over); border-color: var(--over); }
 .tabbar {
   position: fixed; bottom: 0; left: 0; right: 0; display: flex;
   background: var(--card); border-top: 1px solid var(--line);
-  padding-bottom: env(safe-area-inset-bottom); z-index: 5;
+  padding-bottom: var(--inset-bottom); z-index: 5;
 }
 .tabbar button {
   flex: 1; border: none; background: none; padding: 8px 0; font-size: 20px;
