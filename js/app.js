@@ -182,6 +182,9 @@
     addingMeal = meal;
     $('#dialog-title').textContent = `${MEALS.find((m) => m.key === meal).label}に追加`;
     $('#food-search').value = '';
+    $('#barcode-input').value = '';
+    setBarcodeStatus('');
+    resetCustomForm();
     activeCategory = 'すべて';
     renderFoodList();
     foodDialog.showModal();
@@ -250,8 +253,10 @@
     ev.preventDefault();
     const fd = new FormData(ev.target);
     const num = (k) => Math.max(0, parseFloat(fd.get(k)) || 0);
+    const barcode = fd.get('barcode');
     const food = {
       id: 'c' + Date.now().toString(36),
+      ...(barcode ? { barcode } : {}),
       name: fd.get('name').trim(),
       kana: '',
       unit: fd.get('unit').trim() || '1食',
@@ -262,10 +267,100 @@
       },
     };
     state.customFoods.push(food);
-    ev.target.reset();
-    ev.target.closest('details').open = false;
+    resetCustomForm();
     addEntry(food, 1);
   });
+
+  function resetCustomForm() {
+    const form = $('#custom-form');
+    form.reset();
+    form.elements.barcode.value = ''; // hidden は reset で消えない
+    form.closest('details').open = false;
+  }
+
+  // ---------- バーコード検索 ----------
+  function setBarcodeStatus(text) {
+    $('#barcode-status').textContent = text;
+    $('#barcode-status').hidden = !text;
+  }
+
+  async function searchBarcode(raw) {
+    const code = String(raw).trim();
+    if (!Products.isValidBarcode(code)) {
+      setBarcodeStatus('バーコードの数字が正しくありません（8桁または13桁）');
+      return;
+    }
+    $('#barcode-input').value = code;
+
+    // 一度登録・検索した商品は端末内から呼び出す
+    const saved = state.customFoods.find((f) => f.barcode === code);
+    if (saved) {
+      setBarcodeStatus('');
+      openQtyDialog(saved, 1, (q) => addEntry(saved, q));
+      return;
+    }
+
+    setBarcodeStatus('商品を検索しています…');
+    let result;
+    try {
+      result = await Products.lookup(code);
+    } catch (e) {
+      result = { status: 'error' };
+    }
+    if (result.status === 'found') {
+      state.customFoods.push(result.food);
+      save();
+      setBarcodeStatus('');
+      openQtyDialog(result.food, 1, (q) => addEntry(result.food, q));
+      return;
+    }
+
+    // 見つからない場合は、バーコード付きでマイ食品登録へ
+    const form = $('#custom-form');
+    form.elements.barcode.value = code;
+    if (result.name) form.elements.name.value = result.name;
+    form.closest('details').open = true;
+    setBarcodeStatus({
+      error: '通信できませんでした。電波の良い場所で再度お試しいただくか、下のフォームから登録してください。',
+      no_nutrition: '商品は見つかりましたが栄養成分が未登録です。パッケージの栄養成分表示を見て登録してください。',
+      not_found: '商品が見つかりませんでした。パッケージの栄養成分表示を見て登録すると、次回からスキャンで呼び出せます。',
+    }[result.status]);
+    form.elements.name.focus();
+  }
+
+  $('#barcode-form').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    searchBarcode($('#barcode-input').value);
+  });
+
+  if (native) {
+    $('#scan-btn').hidden = false;
+    $('#scan-btn').addEventListener('click', scanBarcode);
+  }
+
+  let installListening = false;
+  async function scanBarcode() {
+    const Scanner = plugin('BarcodeScanner');
+    try {
+      // Google のスキャナーモジュールは初回に Play 開発者サービス経由でダウンロードが必要
+      const { available } = await Scanner.isGoogleBarcodeScannerModuleAvailable();
+      if (!available) {
+        setBarcodeStatus('スキャナーを準備しています…（初回のみ）');
+        if (!installListening) Scanner.addListener('googleBarcodeScannerModuleInstallProgress', (ev) => {
+          if (ev.state === 4) setBarcodeStatus('準備ができました。もう一度「📷 バーコード」を押してください。');
+          else if (ev.state === 3 || ev.state === 5) setBarcodeStatus('スキャナーの準備に失敗しました。通信環境を確認して再度お試しください。');
+          else if (ev.progress != null) setBarcodeStatus(`スキャナーを準備しています… ${ev.progress}%`);
+        });
+        installListening = true;
+        await Scanner.installGoogleBarcodeScannerModule();
+        return;
+      }
+      const { barcodes } = await Scanner.scan({ formats: ['EAN_13', 'EAN_8', 'UPC_A'] });
+      if (barcodes.length) searchBarcode(barcodes[0].rawValue);
+    } catch (e) {
+      if (!/cancel/i.test(e && e.message)) setBarcodeStatus('スキャンできませんでした。数字を入力して検索することもできます。');
+    }
+  }
 
   // ---------- 量の選択ダイアログ ----------
   const qtyDialog = $('#qty-dialog');
