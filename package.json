@@ -1,0 +1,10 @@
+{
+  "name": "gohan-diary",
+  "version": "1.0.0",
+  "private": true,
+  "description": "食事を記録して栄養バランスを採点する食事管理アプリ",
+  "scripts": {
+    "start": "npx --yes http-server -p 8080 .",
+    "test": "node --test test/*.test.js"
+  }
+}
