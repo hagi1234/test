@@ -99,6 +99,15 @@
         <div id="target-info" class="stats"></div>
       </div>
       <div class="card">
+        <h2>AIで料理の写真から推定</h2>
+        <p class="hint">料理の写真からカロリーを推定する機能には、Claude API のAPIキーが必要です。<a href="https://console.anthropic.com/" target="_blank" rel="noopener">Claude Console</a> で発行できます（従量課金）。キーはこの端末の中にだけ保存されます。</p>
+        <form id="apikey-form" class="row-form">
+          <input type="password" id="apikey-input" placeholder="sk-ant-..." autocomplete="off">
+          <button type="submit" class="primary">保存</button>
+        </form>
+        <p id="apikey-status" class="hint"></p>
+      </div>
+      <div class="card">
         <h2>データ</h2>
         <div class="btn-row">
           <button id="export-btn">エクスポート</button>
@@ -129,10 +138,13 @@
       <button type="submit">検索</button>
     </form>
     <p id="barcode-status" class="hint" hidden></p>
+    <button type="button" id="meal-photo-btn" class="photo-btn">🍳 料理の写真からカロリーを推定</button>
     <div id="category-chips" class="chips"></div>
     <ul id="food-list" class="food-list"></ul>
     <details class="custom-food">
       <summary>見つからない場合: 食品を登録する</summary>
+      <button type="button" id="label-scan-btn" class="photo-btn" hidden>📷 栄養成分表示を撮影して入力</button>
+      <p id="label-status" class="hint" hidden></p>
       <form id="custom-form" class="grid-form small">
         <label class="full">食品名<input name="name" required></label>
         <input type="hidden" name="barcode">
@@ -167,9 +179,41 @@
     <button id="qty-ok" class="primary wide">決定</button>
   </dialog>
 
+  <!-- 写真の取得先を選ぶ（アプリ版） -->
+  <dialog id="source-dialog">
+    <div class="dialog-head">
+      <h2>写真を選ぶ</h2>
+      <button class="close" data-close aria-label="閉じる">×</button>
+    </div>
+    <div class="btn-col">
+      <button type="button" class="primary wide" data-source="camera">📷 カメラで撮影</button>
+      <button type="button" class="wide" data-source="gallery">🖼 アルバムから選ぶ</button>
+    </div>
+  </dialog>
+
+  <!-- 料理写真の推定 -->
+  <dialog id="meal-dialog">
+    <div class="dialog-head">
+      <h2>料理の写真から推定</h2>
+      <button class="close" data-close aria-label="閉じる">×</button>
+    </div>
+    <img id="meal-preview" class="meal-preview" alt="選んだ料理の写真">
+    <div class="row-form">
+      <input id="meal-hint" placeholder="補足（任意）例: ご飯は大盛り、油少なめ">
+      <button type="button" id="meal-estimate-btn" class="primary">推定する</button>
+    </div>
+    <p id="meal-status" class="hint" hidden></p>
+    <ul id="meal-results" class="meal-results"></ul>
+    <p id="meal-note" class="hint" hidden></p>
+    <button type="button" id="meal-add-btn" class="primary wide" hidden>選んだ料理を記録する</button>
+  </dialog>
+  <input type="file" id="photo-input" accept="image/*" hidden>
+
   <script src="js/foods.js"></script>
   <script src="js/calc.js"></script>
   <script src="js/products.js"></script>
+  <script src="js/label.js"></script>
+  <script src="js/ai.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

@@ -11,8 +11,10 @@
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "^8.2.1",
+    "@capacitor-mlkit/text-recognition": "^8.2.1",
     "@capacitor/android": "^8.5.3",
     "@capacitor/app": "^8.1.2",
+    "@capacitor/camera": "^8.2.6",
     "@capacitor/core": "^8.5.3",
     "@capacitor/filesystem": "^8.1.5",
     "@capacitor/share": "^8.0.3"

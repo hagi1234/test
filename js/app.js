@@ -184,6 +184,7 @@
     $('#food-search').value = '';
     $('#barcode-input').value = '';
     setBarcodeStatus('');
+    setStatus('#label-status', '');
     resetCustomForm();
     activeCategory = 'すべて';
     renderFoodList();
@@ -362,6 +363,176 @@
     }
   }
 
+  // ---------- 写真 ----------
+  function setStatus(sel, text) {
+    $(sel).textContent = text;
+    $(sel).hidden = !text;
+  }
+
+  // 写真を1枚選んでもらう。アプリ版は { uri, webPath }、Web版は { webPath } を返す。キャンセル時は null
+  const sourceDialog = $('#source-dialog');
+  function pickPhoto() {
+    if (!native) {
+      return new Promise((resolve) => {
+        const input = $('#photo-input');
+        input.value = '';
+        input.onchange = () => resolve(input.files[0] ? { webPath: URL.createObjectURL(input.files[0]) } : null);
+        input.click();
+      });
+    }
+    return new Promise((resolve) => {
+      let chosen = false;
+      sourceDialog.querySelectorAll('[data-source]').forEach((b) => {
+        b.onclick = async () => {
+          chosen = true;
+          sourceDialog.close();
+          try {
+            const Camera = plugin('Camera');
+            const photo = b.dataset.source === 'camera'
+              ? await Camera.takePhoto({ quality: 90 })
+              : (await Camera.chooseFromGallery({ quality: 90 })).results[0];
+            resolve(photo ? { uri: photo.uri, webPath: photo.webPath } : null);
+          } catch (e) {
+            if (!/cancel/i.test(e && e.message)) alert('写真を取得できませんでした');
+            resolve(null);
+          }
+        };
+      });
+      sourceDialog.onclose = () => { if (!chosen) resolve(null); };
+      sourceDialog.showModal();
+    });
+  }
+
+  // 長辺を maxSize px に縮小した JPEG の base64（data: の接頭辞なし）
+  function photoToBase64(webPath, maxSize = 1280) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxSize / Math.max(img.naturalWidth, img.naturalHeight));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.naturalWidth * scale);
+        canvas.height = Math.round(img.naturalHeight * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.8).split(',')[1]);
+      };
+      img.onerror = () => reject(new Error('画像を読み込めませんでした'));
+      img.src = webPath;
+    });
+  }
+
+  // ---------- 栄養成分表示の読み取り（アプリ版のみ） ----------
+  if (native) {
+    $('#label-scan-btn').hidden = false;
+    $('#label-scan-btn').addEventListener('click', scanLabel);
+  }
+
+  async function scanLabel() {
+    const photo = await pickPhoto();
+    if (!photo) return;
+    setStatus('#label-status', '文字を読み取っています…');
+    let parsed;
+    try {
+      const { text } = await plugin('TextRecognition').processImage({ path: photo.uri, script: 'JAPANESE' });
+      parsed = Label.parseNutritionLabel(text);
+    } catch (e) {
+      setStatus('#label-status', '読み取りに失敗しました。もう一度お試しください。');
+      return;
+    }
+    if (!parsed.found.length) {
+      setStatus('#label-status', '栄養成分を読み取れませんでした。明るい場所で、表示の部分だけを大きく写してください。');
+      return;
+    }
+    const form = $('#custom-form');
+    Object.entries(parsed.n).forEach(([k, v]) => { if (v != null) form.elements[k].value = v; });
+    if (parsed.unit) form.elements.unit.value = parsed.unit;
+    setStatus('#label-status', `${parsed.found.length}項目を読み取りました。写真と見比べて、数値が合っているか確認してから登録してください。`);
+    (form.elements.name.value ? form.elements.kcal : form.elements.name).focus();
+  }
+
+  // ---------- 料理写真からの推定 ----------
+  const APIKEY_STORE = 'gohan-diary-apikey'; // バックアップ（エクスポート）には含めない
+  function getApiKey() {
+    try { return localStorage.getItem(APIKEY_STORE) || ''; } catch (e) { return ''; }
+  }
+
+  const mealDialog = $('#meal-dialog');
+  let mealPhoto = null;
+  let mealDishes = [];
+
+  $('#meal-photo-btn').addEventListener('click', async () => {
+    if (!getApiKey()) {
+      if (confirm('この機能には Claude API のAPIキーが必要です。設定画面を開きますか？')) {
+        foodDialog.close();
+        showView('settings');
+        $('#apikey-input').focus();
+      }
+      return;
+    }
+    const photo = await pickPhoto();
+    if (!photo) return;
+    mealPhoto = photo;
+    mealDishes = [];
+    $('#meal-preview').src = photo.webPath;
+    $('#meal-hint').value = '';
+    $('#meal-results').innerHTML = '';
+    setStatus('#meal-status', '');
+    setStatus('#meal-note', '');
+    $('#meal-add-btn').hidden = true;
+    $('#meal-estimate-btn').disabled = false;
+    mealDialog.showModal();
+  });
+
+  $('#meal-estimate-btn').addEventListener('click', async () => {
+    const btn = $('#meal-estimate-btn');
+    btn.disabled = true;
+    $('#meal-results').innerHTML = '';
+    $('#meal-add-btn').hidden = true;
+    setStatus('#meal-note', '');
+    setStatus('#meal-status', 'AIが推定しています…（10〜30秒ほどかかります）');
+    try {
+      const base64 = await photoToBase64(mealPhoto.webPath);
+      const result = await AI.estimateMeal(getApiKey(), base64, $('#meal-hint').value);
+      mealDishes = result.dishes;
+      renderMealResults();
+      setStatus('#meal-status', '');
+      setStatus('#meal-note', result.note ? `メモ: ${result.note}` : '');
+    } catch (e) {
+      setStatus('#meal-status', e.message);
+    }
+    btn.disabled = false;
+    btn.textContent = '再推定';
+  });
+
+  function renderMealResults() {
+    const rows = mealDishes.map((d, i) => `
+      <li><label>
+        <input type="checkbox" data-dish="${i}" checked>
+        <div class="name">${esc(d.name)}<div class="sub">${esc(d.amount)}・P${fmt(d.n.protein, 1)} F${fmt(d.n.fat, 1)} C${fmt(d.n.carbs, 1)}・塩分${fmt(d.n.salt, 1)}g</div></div>
+        <span>${fmt(d.n.kcal)} kcal</span>
+      </label></li>`).join('');
+    const total = mealDishes.reduce((s, d) => s + d.n.kcal, 0);
+    $('#meal-results').innerHTML = rows + `<li class="meal-total">合計 ${fmt(total)} kcal</li>`;
+    $('#meal-add-btn').hidden = false;
+  }
+
+  $('#meal-add-btn').addEventListener('click', () => {
+    const picked = [...$('#meal-results').querySelectorAll('input[data-dish]:checked')].map((c) => mealDishes[c.dataset.dish]);
+    if (!picked.length) return;
+    const list = (state.logs[currentDate] = entriesOf(currentDate));
+    picked.forEach((d, i) => list.push({
+      id: Date.now().toString(36) + i + Math.random().toString(36).slice(2, 6),
+      meal: addingMeal,
+      name: d.name,
+      unit: d.amount + '（AI推定）',
+      n: { ...d.n },
+      qty: 1,
+    }));
+    save();
+    mealDialog.close();
+    foodDialog.close();
+    renderDiary();
+  });
+
   // ---------- 量の選択ダイアログ ----------
   const qtyDialog = $('#qty-dialog');
   let qty = 1, qtyFood = null, qtyCallback = null;
@@ -472,7 +643,27 @@
       ['脂質', `${t.fat} g`],
       ['炭水化物', `${t.carbs} g`],
     ].map(([k, v]) => `<div class="stat"><small>${k}</small><strong>${v}</strong></div>`).join('') : '';
+    renderApiKey();
   }
+
+  function renderApiKey() {
+    const key = getApiKey();
+    $('#apikey-input').value = key;
+    $('#apikey-status').textContent = key
+      ? `設定済みです。1枚の推定に数円程度かかります（モデル: ${AI.MODEL}）。`
+      : '未設定です。';
+  }
+  $('#apikey-form').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    const key = $('#apikey-input').value.trim();
+    try {
+      if (key) localStorage.setItem(APIKEY_STORE, key);
+      else localStorage.removeItem(APIKEY_STORE);
+    } catch (e) {
+      alert('保存に失敗しました');
+    }
+    renderApiKey();
+  });
 
   profileForm.addEventListener('submit', (ev) => {
     ev.preventDefault();
@@ -528,9 +719,10 @@
     ev.target.value = '';
   });
   $('#reset-btn').addEventListener('click', () => {
-    if (!confirm('すべての記録とプロフィールを削除します。よろしいですか？')) return;
+    if (!confirm('すべての記録・プロフィール・APIキーを削除します。よろしいですか？')) return;
     state = { profile: null, logs: {}, weights: {}, customFoods: [] };
     save();
+    try { localStorage.removeItem(APIKEY_STORE); } catch (e) { /* 何もしない */ }
     renderAll();
     showView('settings');
   });
